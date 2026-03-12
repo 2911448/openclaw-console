@@ -1,0 +1,29 @@
+{
+  "name": "openclaw-console",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "PATH=\"/opt/homebrew/opt/rustup/bin:$PATH\" tauri dev",
+    "dev:web": "vite",
+    "build:web": "vue-tsc -b && vite build",
+    "build": "PATH=\"/opt/homebrew/opt/rustup/bin:$PATH\" tauri build"
+  },
+  "dependencies": {
+    "@vueuse/core": "^14.2.1",
+    "pinia": "^3.0.4",
+    "vue": "^3.5.25"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.3.1",
+    "@types/node": "^24.10.1",
+    "@vitejs/plugin-vue": "^6.0.2",
+    "@vue/tsconfig": "^0.8.1",
+    "autoprefixer": "^10.4.27",
+    "postcss": "^8.5.8",
+    "tailwindcss": "^3.4.17",
+    "typescript": "~5.9.3",
+    "vite": "^7.3.1",
+    "vue-tsc": "^3.1.5"
+  }
+}
