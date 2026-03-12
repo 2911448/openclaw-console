@@ -800,7 +800,6 @@ fn session_history(session_key: String, limit: Option<usize>) -> Result<Vec<Valu
 async fn send_message(
   session_key: String,
   message: String,
-  model: Option<String>,
   gateway_port: Option<u16>,
 ) -> Result<Value, String> {
   let msg = message.trim().to_string();
@@ -816,20 +815,17 @@ async fn send_message(
 
     let openclaw = resolve_openclaw_path()
       .ok_or_else(|| "openclaw command not found. checked /opt/homebrew/bin, /usr/local/bin and PATH".to_string())?;
-    let mut cmd = Command::new(openclaw);
-    cmd.args([
+    let args: Vec<&str> = vec![
       "agent",
       "--session-id",
       session.session_id.as_str(),
       "--message",
       msg.as_str(),
       "--json",
-    ]);
-    if let Some(m) = model.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty()) {
-      cmd.args(["--model", m]);
-    }
+    ];
+    let mut cmd = Command::new(&openclaw);
+    cmd.args(&args);
     apply_runtime_env(&mut cmd, gateway_port);
-
     let output = cmd.output().map_err(|e| format!("failed to run openclaw: {}", e))?;
 
     if !output.status.success() {

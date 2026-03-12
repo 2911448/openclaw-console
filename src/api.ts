@@ -137,8 +137,8 @@ export async function getSessionHistory(sessionKey: string, limit = 120) {
   return getInvoke()<any[]>('session_history', { sessionKey, limit });
 }
 
-export async function sendMessage(sessionKey: string, message: string, model?: string, gatewayPort?: number) {
-  return getInvoke()<any>('send_message', { sessionKey, message, model, gatewayPort });
+export async function sendMessage(sessionKey: string, message: string, gatewayPort?: number) {
+  return getInvoke()<any>('send_message', { sessionKey, message, gatewayPort });
 }
 
 export async function restartGateway(gatewayPort?: number) {
