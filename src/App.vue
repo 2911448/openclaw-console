@@ -363,7 +363,7 @@
               <div class="text-[11px] text-subtext mb-1">GATEWAY PORT</div>
               <div class="flex items-center gap-2">
                 <select v-model="gatewayPortDraft" class="input text-xs" @change="applyGatewayPortSelection">
-                  <option value="">自动（默认）</option>
+                  <option value="">自动（{{ status.resolvedGatewayPort ? `当前 ${status.resolvedGatewayPort}` : '默认' }}）</option>
                   <option v-for="p in gatewayPorts" :key="`${p.port}-${p.pid||0}`" :value="String(p.port)">
                     {{ p.port }}{{ p.pid ? ` (pid:${p.pid})` : '' }}
                   </option>
@@ -375,7 +375,7 @@
             </div>
           </div>
           <div class="p-4 rounded-xl border border-white/10 bg-white/5 space-y-2">
-            <InfoRow label="TARGET PORT" :value="selectedGatewayPort ? String(selectedGatewayPort) : 'DEFAULT'" />
+            <InfoRow label="TARGET PORT" :value="displayTargetPort" />
             <InfoRow label="GATEWAY STATE" :value="status.gatewayState || '-'" />
             <InfoRow label="GATEWAY RPC" :value="status.gatewayRpcOk ? 'OK' : 'FAILED'" />
             <InfoRow label="CURRENT CHANNEL" :value="status.currentChannel || '-'" />
@@ -532,6 +532,11 @@ const scrollRef = ref<HTMLElement | null>(null)
 const selectedGatewayPort = computed(() => {
   const n = Number(gatewayPortDraft.value)
   return Number.isFinite(n) && n > 0 ? n : undefined
+})
+const displayTargetPort = computed(() => {
+  if (selectedGatewayPort.value) return String(selectedGatewayPort.value)
+  if (status.value.resolvedGatewayPort) return String(status.value.resolvedGatewayPort)
+  return '-'
 })
 
 const filteredSessions = computed(() => {

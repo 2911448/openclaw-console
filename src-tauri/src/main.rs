@@ -35,6 +35,7 @@ struct LocalStatus {
   openclaw_found: bool,
   openclaw_version: Option<String>,
   openclaw_path: Option<String>,
+  resolved_gateway_port: Option<u16>,
   sessions_dir: String,
   sessions_file_exists: bool,
   sessions_file_readable: bool,
@@ -218,6 +219,54 @@ fn parse_listener_port(s: &str) -> Option<u16> {
   digits.parse::<u16>().ok()
 }
 
+fn parse_port_from_url(raw: &str) -> Option<u16> {
+  let s = raw.trim();
+  let after_scheme = s.split_once("://").map(|(_, rhs)| rhs).unwrap_or(s);
+  let host_port = after_scheme.split('/').next().unwrap_or(after_scheme);
+  let port_str = host_port.rsplit(':').next()?;
+  port_str.parse::<u16>().ok()
+}
+
+fn extract_gateway_port(j: &Value) -> Option<u16> {
+  let paths: &[&[&str]] = &[
+    &["gateway", "bindings", "port"],
+    &["gateway", "port"],
+    &["service", "gateway", "bindings", "port"],
+    &["service", "gateway", "port"],
+    &["port"],
+  ];
+  for path in paths {
+    let mut cur = j;
+    let mut ok = true;
+    for key in *path {
+      if let Some(next) = cur.get(*key) {
+        cur = next;
+      } else {
+        ok = false;
+        break;
+      }
+    }
+    if ok {
+      if let Some(v) = cur.as_u64().and_then(|n| u16::try_from(n).ok()) {
+        return Some(v);
+      }
+      if let Some(s) = cur.as_str() {
+        if let Ok(v) = s.parse::<u16>() {
+          return Some(v);
+        }
+      }
+    }
+  }
+  if let Some(url) = j
+    .get("rpc")
+    .and_then(|x| x.get("url"))
+    .and_then(|x| x.as_str())
+  {
+    return parse_port_from_url(url);
+  }
+  None
+}
+
 fn discover_gateway_ports() -> Vec<GatewayPortItem> {
   let mut ps_cmd = Command::new("/bin/ps");
   ps_cmd.args(["-Ao", "pid=,command="]);
@@ -357,10 +406,14 @@ fn local_status(gateway_port: Option<u16>) -> Result<LocalStatus, String> {
   let mut gateway_state: Option<String> = None;
   let mut gateway_rpc_ok = false;
   let mut gateway_rpc_error: Option<String> = None;
+  let mut resolved_gateway_port = gateway_port;
   let mut current_channel: Option<String> = None;
   let mut configured_channels: Vec<String> = Vec::new();
 
   if let Ok((j, _stderr)) = run_openclaw_json(["gateway", "status", "--json"], gateway_port) {
+    if resolved_gateway_port.is_none() {
+      resolved_gateway_port = extract_gateway_port(&j);
+    }
     gateway_state = j
       .get("service")
       .and_then(|x| x.get("runtime"))
@@ -399,6 +452,7 @@ fn local_status(gateway_port: Option<u16>) -> Result<LocalStatus, String> {
     openclaw_found,
     openclaw_version,
     openclaw_path: openclaw_path.map(|p| p.display().to_string()),
+    resolved_gateway_port,
     sessions_dir: sessions_dir.display().to_string(),
     sessions_file_exists,
     sessions_file_readable,
@@ -470,6 +524,7 @@ fn local_status_quick(gateway_port: Option<u16>) -> Result<LocalStatus, String> 
     openclaw_found,
     openclaw_version,
     openclaw_path: openclaw_path.map(|p| p.display().to_string()),
+    resolved_gateway_port: gateway_port,
     sessions_dir: sessions_dir.display().to_string(),
     sessions_file_exists,
     sessions_file_readable,

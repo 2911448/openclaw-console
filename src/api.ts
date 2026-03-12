@@ -12,6 +12,7 @@ export type LocalStatus = {
   openclawFound: boolean;
   openclawVersion?: string;
   openclawPath?: string;
+  resolvedGatewayPort?: number;
   sessionsDir: string;
   sessionsFileExists: boolean;
   sessionsFileReadable: boolean;
