@@ -219,69 +219,68 @@ fn parse_listener_port(s: &str) -> Option<u16> {
 }
 
 fn discover_gateway_ports() -> Vec<GatewayPortItem> {
-  let output = match Command::new("lsof")
-    .args(["-nP", "-iTCP", "-sTCP:LISTEN"])
-    .output()
-  {
-    Ok(o) => o,
-    Err(_) => return Vec::new(),
+  let mut ps_cmd = Command::new("/bin/ps");
+  ps_cmd.args(["-Ao", "pid=,command="]);
+  apply_runtime_env(&mut ps_cmd, None);
+  let ps_out = match ps_cmd.output() {
+    Ok(o) if o.status.success() => o,
+    _ => return Vec::new(),
   };
-  if !output.status.success() {
+
+  let mut openclaw_pids = HashSet::<i32>::new();
+  let mut pid_cmd = HashMap::<i32, String>::new();
+  for line in String::from_utf8_lossy(&ps_out.stdout).lines() {
+    let t = line.trim();
+    if t.is_empty() {
+      continue;
+    }
+    let mut it = t.split_whitespace();
+    let pid = match it.next().and_then(|x| x.parse::<i32>().ok()) {
+      Some(v) => v,
+      None => continue,
+    };
+    let cmdline = t.split_once(' ').map(|(_, rhs)| rhs.trim().to_string()).unwrap_or_default();
+    if cmdline.to_lowercase().contains("openclaw") {
+      openclaw_pids.insert(pid);
+      pid_cmd.insert(pid, cmdline);
+    }
+  }
+  if openclaw_pids.is_empty() {
     return Vec::new();
   }
 
-  let raw = String::from_utf8_lossy(&output.stdout).to_string();
-  let mut candidates: Vec<(String, i32, u16)> = Vec::new();
-  let mut pids = HashSet::<i32>::new();
+  let mut lsof_cmd = Command::new("/usr/sbin/lsof");
+  lsof_cmd.args(["-nP", "-iTCP", "-sTCP:LISTEN"]);
+  apply_runtime_env(&mut lsof_cmd, None);
+  let lsof_out = match lsof_cmd.output() {
+    Ok(o) if o.status.success() => o,
+    _ => return Vec::new(),
+  };
 
-  for line in raw.lines().skip(1) {
+  let mut out = Vec::<GatewayPortItem>::new();
+  let mut seen_port = HashSet::<u16>::new();
+  for line in String::from_utf8_lossy(&lsof_out.stdout).lines().skip(1) {
     let parts: Vec<&str> = line.split_whitespace().collect();
     if parts.len() < 9 {
       continue;
     }
-    let proc_name = parts[0].to_string();
     let pid = match parts[1].parse::<i32>() {
       Ok(v) => v,
       Err(_) => continue,
     };
+    if !openclaw_pids.contains(&pid) {
+      continue;
+    }
     let name_col = parts.last().copied().unwrap_or("");
     let port = match parse_listener_port(name_col) {
       Some(v) => v,
       None => continue,
     };
-    candidates.push((proc_name, pid, port));
-    pids.insert(pid);
-  }
-
-  let mut pid_cmd = HashMap::<i32, String>::new();
-  for pid in pids {
-    if let Ok(o) = Command::new("ps").args(["-p", &pid.to_string(), "-o", "command="]).output() {
-      if o.status.success() {
-        let cmdline = String::from_utf8_lossy(&o.stdout).trim().to_string();
-        if !cmdline.is_empty() {
-          pid_cmd.insert(pid, cmdline);
-        }
-      }
-    }
-  }
-
-  let mut out = Vec::<GatewayPortItem>::new();
-  let mut seen_port = HashSet::<u16>::new();
-  for (proc_name, pid, port) in candidates {
-    let cmdline = pid_cmd.get(&pid).cloned().unwrap_or_default();
-    let proc_lower = proc_name.to_lowercase();
-    let cmd_lower = cmdline.to_lowercase();
-    let is_openclaw = proc_lower.contains("openclaw")
-      || cmd_lower.contains("openclaw")
-      || (proc_lower == "node" && cmd_lower.contains("/openclaw/"));
-    if !is_openclaw {
-      continue;
-    }
     if seen_port.insert(port) {
       out.push(GatewayPortItem {
         port,
         pid: Some(pid),
-        command: if cmdline.is_empty() { Some(proc_name) } else { Some(cmdline) },
+        command: pid_cmd.get(&pid).cloned(),
       });
     }
   }

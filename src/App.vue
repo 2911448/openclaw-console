@@ -375,6 +375,7 @@
             </div>
           </div>
           <div class="p-4 rounded-xl border border-white/10 bg-white/5 space-y-2">
+            <InfoRow label="TARGET PORT" :value="selectedGatewayPort ? String(selectedGatewayPort) : 'DEFAULT'" />
             <InfoRow label="GATEWAY STATE" :value="status.gatewayState || '-'" />
             <InfoRow label="GATEWAY RPC" :value="status.gatewayRpcOk ? 'OK' : 'FAILED'" />
             <InfoRow label="CURRENT CHANNEL" :value="status.currentChannel || '-'" />
@@ -716,9 +717,13 @@ async function refreshGatewayPorts() {
   gatewayPortsLoading.value = true
   try {
     gatewayPorts.value = await listGatewayPorts()
+    if (gatewayPortDraft.value && !gatewayPorts.value.some((p) => String(p.port) === gatewayPortDraft.value)) {
+      gatewayPortDraft.value = ''
+    }
     const first = gatewayPorts.value[0]
     if (!gatewayPortDraft.value && first) {
       gatewayPortDraft.value = String(first.port)
+      applyGatewayPortSelection()
     }
   } finally {
     gatewayPortsLoading.value = false
