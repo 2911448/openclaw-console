@@ -1,7 +1,7 @@
 <template>
   <div class="h-full w-full app-shell">
     <div class="content-shell">
-    <aside class="w-[260px] shrink-0 p-4 border-r border-white/10 bg-panel/35 backdrop-blur-md flex flex-col">
+    <aside class="panel-nav shrink-0 p-4 border-r border-white/10 bg-panel/35 backdrop-blur-md flex flex-col min-h-0">
       <div class="flex items-center gap-3 px-2">
         <div class="h-9 w-9 rounded-xl bg-purple-600/90 flex items-center justify-center font-bold">OC</div>
         <div class="leading-tight">
@@ -25,7 +25,7 @@
       </div>
     </aside>
 
-    <section v-if="activeView === 'sessions'" class="w-[320px] shrink-0 p-4 border-r border-white/10 bg-white/[0.02]">
+    <section v-if="activeView === 'sessions'" class="panel-sessions shrink-0 p-4 border-r border-white/10 bg-white/[0.02] h-full min-h-0 flex flex-col">
       <div class="flex items-center justify-between mb-3">
         <div class="font-semibold">Sessions</div>
         <div class="flex items-center gap-2">
@@ -37,7 +37,7 @@
         <input v-model="sessionQuery" class="input" placeholder="Session ID..." />
       </div>
 
-      <div class="space-y-2 overflow-auto pr-1" style="max-height: calc(100vh - 170px)">
+      <div class="space-y-2 overflow-auto pr-1 flex-1 min-h-0">
         <div class="text-[11px] text-subtext px-1">今天</div>
         <button
           v-for="s in groupedSessions.today"
@@ -74,16 +74,15 @@
       </div>
     </section>
 
-    <main v-if="activeView === 'sessions'" class="flex-1 min-w-0 p-4 bg-black/10">
-      <div class="flex items-center justify-between mb-3">
-        <div class="min-w-0 flex-1 max-w-[42%] mr-3">
+    <main v-if="activeView === 'sessions'" class="flex-1 min-w-0 p-4 bg-black/10 h-full min-h-0 flex flex-col">
+      <div class="flex items-start justify-between mb-3 gap-3">
+        <div class="min-w-0 flex-1">
           <div class="font-semibold">Debug Console</div>
-          <div class="text-xs text-subtext truncate">Session: {{ selected?.sessionKey || '-' }}</div>
-          <div v-if="lastError" class="text-xs text-red-300 mt-1 truncate max-w-[780px]">{{ lastError }}</div>
+          <div v-if="lastError" class="text-xs text-red-300 mt-1 whitespace-pre-wrap break-all max-w-[900px]">{{ lastError }}</div>
         </div>
-        <div class="shrink-0 flex flex-nowrap items-center gap-2">
+        <div class="shrink-0 flex flex-nowrap items-center gap-2 mt-0.5">
           <button v-if="messageView!=='chat'" class="btn" @click="messageView='chat'">对话视图</button>
-          <button class="btn" @click="messageView='debug'">调试视图</button>
+          <button v-if="messageView!=='debug'" class="btn" @click="messageView='debug'">调试视图</button>
           <button v-if="messageView==='chat'" class="btn" @click="chatOnlyText = !chatOnlyText">
             {{ chatOnlyText ? '显示工具块' : '仅文本' }}
           </button>
@@ -92,8 +91,8 @@
         </div>
       </div>
 
-      <div class="rounded-2xl border border-white/10 bg-white/5 shadow-soft overflow-hidden min-w-0">
-        <div class="h-[calc(100vh-220px)] overflow-auto p-4 space-y-3 min-w-0" ref="scrollRef">
+      <div class="rounded-2xl border border-white/10 bg-white/5 shadow-soft overflow-hidden min-w-0 flex-1 min-h-0 flex flex-col">
+        <div class="flex-1 min-h-0 overflow-auto p-4 space-y-3 min-w-0" ref="scrollRef">
           <div v-if="!selected" class="text-subtext">选择一个 session 开始查看对话。</div>
           <template v-else>
             <div
@@ -129,7 +128,7 @@
       </div>
     </main>
 
-    <aside v-if="activeView === 'sessions'" class="w-[340px] shrink-0 p-4 border-l border-white/10 bg-white/[0.02]">
+    <aside v-if="activeView === 'sessions'" class="panel-runtime shrink-0 p-4 border-l border-white/10 bg-white/[0.02] h-full min-h-0 flex flex-col">
       <div class="font-semibold mb-3">Local Runtime</div>
       <div class="p-3 rounded-xl border border-white/10 bg-white/5 space-y-2">
         <InfoRow label="OPENCLAW CLI" :value="status.openclawFound ? 'FOUND' : 'MISSING'" />
@@ -159,10 +158,10 @@
         <InfoRow label="UPDATED" :value="formatTimeLabel(selected?.updatedAt)" />
         <div class="pt-1">
           <div class="text-[11px] text-subtext mb-1">SWITCH MODEL</div>
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-2 min-w-0">
             <select
               v-model="selectedModelDraft"
-              class="input text-xs"
+              class="input text-xs flex-1 min-w-0"
               :disabled="!selected || sending || modelOptionsLoading"
             >
               <option value="">跟随当前会话</option>
@@ -170,7 +169,7 @@
                 {{ m.label }}
               </option>
             </select>
-            <button class="btn" :disabled="!selected || sending" @click="applySelectedModel">
+            <button class="btn shrink-0 whitespace-nowrap" :disabled="!selected || sending" @click="applySelectedModel">
               应用
             </button>
           </div>
@@ -184,15 +183,22 @@
         <button class="btn" @click="logFilter='warn'">异常</button>
         <button class="btn" @click="logFilter='info'">信息</button>
       </div>
-      <div class="p-3 rounded-xl border border-white/10 bg-white/5 overflow-auto" style="max-height: calc(100vh - 420px)">
+      <div class="p-3 rounded-xl border border-white/10 bg-white/5 overflow-auto flex-1 min-h-0">
         <div v-if="filteredLogs.length===0" class="text-subtext">暂无日志（工具调用/事件将显示在这里）。</div>
         <div v-for="(l, i) in filteredLogs" :key="i" class="text-xs">
-          <div class="flex items-center gap-2 py-1">
+          <div
+            class="flex items-center gap-2 py-1 rounded px-1 cursor-pointer hover:bg-white/5 transition-colors"
+            :title="l.text"
+            @click="expandedLogIndex = expandedLogIndex === i ? -1 : i"
+          >
             <span class="text-subtext">{{ l.ts }}</span>
             <span class="text-green-400" v-if="l.level==='info'">•</span>
             <span class="text-purple-400" v-else-if="l.level==='tool'">•</span>
             <span class="text-amber-300" v-else>•</span>
             <span class="truncate">{{ l.text }}</span>
+          </div>
+          <div v-if="expandedLogIndex === i" class="pl-[64px] pr-2 pb-2 text-[11px] text-subtext whitespace-pre-wrap break-all">
+            {{ l.text }}
           </div>
         </div>
       </div>
@@ -438,7 +444,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import NavItem from './components/NavItem.vue'
 import InfoRow from './components/InfoRow.vue'
 import { getAgentPanelStatus, getGatewayLogs, getLocalStatus, getLocalStatusQuick, getOpenclawConfig, getSessionHistory, listGatewayPorts, listModels, listSessions, listSkills, restartGateway, runDoctor, saveOpenclawConfig, sendMessage, type ActionResult, type AgentPanelData, type GatewayLogs, type GatewayPortItem, type LocalStatus, type ModelOption, type OpenclawConfigPayload, type SessionItem, type SkillItem, type SkillsPayload } from './api'
@@ -462,6 +468,7 @@ const logs = ref<{ ts: string; level: 'info' | 'tool' | 'warn'; text: string }[]
 const messageView = ref<'chat' | 'debug'>('chat')
 const chatOnlyText = ref(false)
 const logFilter = ref<'all' | 'info' | 'tool' | 'warn'>('all')
+const expandedLogIndex = ref(-1)
 
 const draft = ref('')
 const sending = ref(false)
@@ -590,6 +597,10 @@ const groupedSessions = computed(() => {
 const filteredLogs = computed(() => {
   if (logFilter.value === 'all') return logs.value
   return logs.value.filter(l => l.level === logFilter.value)
+})
+
+watch(logFilter, () => {
+  expandedLogIndex.value = -1
 })
 
 const displayedMessages = computed(() => {
@@ -869,6 +880,192 @@ function formatClock(raw?: string) {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
+function nowIso() {
+  return new Date().toISOString()
+}
+
+function clipText(s: string, n = 96) {
+  const t = (s || '').replace(/\s+/g, ' ').trim()
+  if (!t) return ''
+  return t.length > n ? `${t.slice(0, n - 1)}…` : t
+}
+
+function summarizeToolCall(toolName: string, payload: any) {
+  const args = payload?.arguments || payload?.message?.arguments || payload?.message?.content?.[0]?.arguments || {}
+  const name = toolName || payload?.name || payload?.toolName || 'tool'
+  const command = typeof args?.command === 'string' ? args.command : ''
+  const query = typeof args?.query === 'string' ? args.query : ''
+  const path = typeof args?.path === 'string' ? args.path : ''
+  if (command) return `${name}: ${clipText(command)}`
+  if (query) return `${name}: query=${clipText(query, 72)}`
+  if (path) return `${name}: ${clipText(path, 72)}`
+  return `${name}: call`
+}
+
+function summarizeToolResult(toolName: string, payload: any) {
+  const name = toolName || payload?.toolName || payload?.name || 'tool'
+  const details = payload?.details || payload?.message?.details || {}
+  const status = String(details?.status || '')
+  const exitCode = details?.exitCode
+  const firstText = clipText(
+    toChatText(payload?.content || payload?.message?.content) ||
+    toText(payload?.content || payload?.message?.content),
+    80,
+  )
+  const statusText = status ? `${status}${exitCode !== undefined ? ` exit=${exitCode}` : ''}` : (exitCode !== undefined ? `exit=${exitCode}` : 'result')
+  return firstText ? `${name}: ${statusText} · ${firstText}` : `${name}: ${statusText}`
+}
+
+function extractGatewayTokenFromConfig(content?: string) {
+  if (!content) return ''
+  try {
+    const j = JSON.parse(content)
+    const token = j?.gateway?.auth?.token
+    return typeof token === 'string' ? token.trim() : ''
+  } catch {
+    return ''
+  }
+}
+
+function extractSseDelta(payload: any): string {
+  if (!payload) return ''
+  if (typeof payload === 'string') return payload
+  const candidates = [
+    payload?.message?.content,
+    payload?.delta,
+    payload?.content,
+    payload?.text,
+    payload?.choices?.[0]?.delta?.content,
+    payload?.choices?.[0]?.message?.content,
+  ]
+  for (const c of candidates) {
+    if (typeof c === 'string' && c) return c
+  }
+  return ''
+}
+
+async function sendViaSse(sessionKey: string, sessionId: string, msg: string) {
+  const port = selectedGatewayPort.value ?? status.value.resolvedGatewayPort
+  if (!port) throw new Error('gateway port unresolved, cannot open SSE stream')
+
+  let token = extractGatewayTokenFromConfig(openclawConfig.value.content || openclawConfigDraft.value)
+  if (!token) {
+    try {
+      const cfg = await getOpenclawConfig()
+      openclawConfig.value = cfg
+      if (!openclawConfigDraft.value) openclawConfigDraft.value = cfg.content
+      token = extractGatewayTokenFromConfig(cfg.content)
+    } catch {
+      // ignore token preload errors
+    }
+  }
+
+  const headers: Record<string, string> = {
+    Accept: 'text/event-stream',
+    'Content-Type': 'application/json',
+  }
+  if (token) headers.Authorization = `Bearer ${token}`
+
+  const body = {
+    model: 'openclaw',
+    stream: true,
+    sessionKey,
+    sessionId,
+    messages: [{ role: 'user', content: msg }],
+  }
+
+  const res = await fetch(`http://127.0.0.1:${port}/api/chat`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  })
+  if (!res.ok || !res.body) {
+    throw new Error(`SSE request failed (${res.status} ${res.statusText || 'error'})`)
+  }
+
+  const assistantMsg: ChatMessage = {
+    role: 'assistant',
+    text: '',
+    meta: nowIso(),
+    kind: 'text',
+  }
+  messages.value.push(assistantMsg)
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let eventName = ''
+  let dataLines: string[] = []
+  let gotDelta = false
+
+  const flushEvent = async () => {
+    if (dataLines.length === 0) return
+    const rawData = dataLines.join('\n')
+    dataLines = []
+    if (rawData === '[DONE]') return
+    let parsed: any = null
+    try {
+      parsed = JSON.parse(rawData)
+    } catch {
+      parsed = { raw: rawData }
+    }
+    const delta = extractSseDelta(parsed)
+    if (delta) {
+      assistantMsg.text += delta
+      gotDelta = true
+      await nextTick()
+      if (scrollRef.value) scrollRef.value.scrollTop = scrollRef.value.scrollHeight
+    }
+    debugMessages.value.push({
+      role: 'assistant',
+      text: JSON.stringify({ type: 'sse', event: eventName || 'message', data: parsed }, null, 2),
+      meta: nowIso(),
+    })
+    eventName = ''
+  }
+
+  while (true) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    let idx = buffer.indexOf('\n')
+    while (idx !== -1) {
+      let line = buffer.slice(0, idx)
+      buffer = buffer.slice(idx + 1)
+      if (line.endsWith('\r')) line = line.slice(0, -1)
+      if (!line) {
+        await flushEvent()
+      } else if (line.startsWith('event:')) {
+        eventName = line.slice(6).trim()
+      } else if (line.startsWith('data:')) {
+        dataLines.push(line.slice(5).trimStart())
+      }
+      idx = buffer.indexOf('\n')
+    }
+  }
+  await flushEvent()
+
+  if (!gotDelta && !assistantMsg.text.trim()) {
+    assistantMsg.text = '(SSE connected but no textual delta returned)'
+  }
+}
+
+function appendSendError(errText: string) {
+  const t = nowIso()
+  messages.value.push({
+    role: 'assistant',
+    text: `发送失败\n${errText}`,
+    meta: t,
+    kind: 'text',
+  })
+  debugMessages.value.push({
+    role: 'assistant',
+    text: JSON.stringify({ type: 'send_error', error: errText }, null, 2),
+    meta: t,
+  })
+  logs.value.push({ ts: formatClock(t), level: 'warn', text: errText.slice(0, 240) })
+}
+
 async function quickRefresh() {
   await Promise.all([
     refreshSessions(),
@@ -946,7 +1143,7 @@ async function refreshHistory() {
         toolName,
         toolPayload: JSON.stringify(it, null, 2),
       })
-      nextLogs.push({ ts, level: 'tool', text: `${toolName} call` })
+      nextLogs.push({ ts, level: 'tool', text: summarizeToolCall(String(toolName), it) })
       continue
     }
     if (isToolResult) {
@@ -959,7 +1156,7 @@ async function refreshHistory() {
         toolName,
         toolPayload: JSON.stringify(it, null, 2),
       })
-      nextLogs.push({ ts, level: 'tool', text: `${toolName} result` })
+      nextLogs.push({ ts, level: 'tool', text: summarizeToolResult(String(toolName), it) })
       continue
     }
     if (typ === 'error' || it.error || it.err || it.failed) {
@@ -979,7 +1176,55 @@ async function refreshHistory() {
       const msg = it.message ?? it
       const role = String(msg.role || it.role || 'assistant')
       const content = msg.content ?? msg.text ?? it.content ?? it.text ?? it
-      nextMsgs.push({ role, text: toChatText(content), meta: it.timestamp || msg.timestamp, kind: 'text' })
+      const metaTs = it.timestamp || msg.timestamp
+
+      // assistant toolCall blocks are nested inside message.content[]
+      if (role === 'assistant' && Array.isArray(content)) {
+        let handledTool = false
+        for (const part of content) {
+          if (!part || typeof part !== 'object') continue
+          if (part.type === 'toolCall') {
+            const toolName = part.name || msg.name || it.name || 'tool'
+            nextMsgs.push({
+              role: 'assistant',
+              text: `${toolName} call`,
+              meta: metaTs,
+              kind: 'toolCall',
+              toolName,
+              toolPayload: JSON.stringify(part, null, 2),
+            })
+            nextLogs.push({ ts, level: 'tool', text: summarizeToolCall(String(toolName), part) })
+            handledTool = true
+          }
+        }
+        if (handledTool) continue
+      }
+
+      // toolResult comes as role=toolResult in message envelope.
+      if (role === 'toolResult') {
+        const toolName = msg.toolName || msg.name || it.toolName || it.name || 'tool'
+        const text = toChatText(content) || toText(content)
+        nextMsgs.push({
+          role: 'assistant',
+          text: `${toolName} result\n${text}`.trim(),
+          meta: metaTs,
+          kind: 'toolResult',
+          toolName,
+          toolPayload: JSON.stringify(msg, null, 2),
+        })
+        nextLogs.push({ ts, level: 'tool', text: summarizeToolResult(String(toolName), msg) })
+        continue
+      }
+
+      // message-level execution error from provider/gateway.
+      if (msg.errorMessage || msg.stopReason === 'error') {
+        const errText = String(msg.errorMessage || msg.stopReason || 'message error')
+        nextLogs.push({ ts, level: 'warn', text: errText.slice(0, 240) })
+        nextMsgs.push({ role: 'assistant', text: errText, meta: metaTs, kind: 'text' })
+        continue
+      }
+
+      nextMsgs.push({ role, text: toChatText(content), meta: metaTs, kind: 'text' })
       continue
     }
 
@@ -1036,25 +1281,39 @@ async function send() {
   const msg = draft.value.trim()
   if (!msg) return
 
+  const t = nowIso()
+  messages.value.push({ role: 'user', text: msg, meta: t, kind: 'text' })
+  debugMessages.value.push({
+    role: 'user',
+    text: JSON.stringify({ type: 'send', text: msg }, null, 2),
+    meta: t,
+  })
+  await nextTick()
+  if (scrollRef.value) {
+    scrollRef.value.scrollTop = scrollRef.value.scrollHeight
+  }
+
   try {
     sending.value = true
     lastError.value = null
     draft.value = ''
-    const model = selectedModelDraft.value.trim() || undefined
-    await sendMessage(selected.value.sessionKey, msg, model, selectedGatewayPort.value)
-    if (model && selected.value) {
-      const [provider, ...modelParts] = model.split('/')
-      const modelName = modelParts.join('/').trim()
-      selected.value = { ...selected.value, model: modelName || selected.value.model, modelProvider: provider || selected.value.modelProvider }
-      sessions.value = sessions.value.map((it) =>
-        it.sessionKey === selected.value?.sessionKey
-          ? { ...it, model: selected.value?.model, modelProvider: selected.value?.modelProvider }
-          : it,
-      )
+    try {
+      await sendViaSse(selected.value.sessionKey, selected.value.sessionId, msg)
+      refreshSessions().catch(() => {})
+    } catch (sseErr: any) {
+      const sseText = sseErr?.message ?? String(sseErr)
+      debugMessages.value.push({
+        role: 'assistant',
+        text: JSON.stringify({ type: 'sse_fallback', error: sseText }, null, 2),
+        meta: nowIso(),
+      })
+      await sendMessage(selected.value.sessionKey, msg, selectedGatewayPort.value)
+      await refreshHistory()
     }
-    await refreshHistory()
   } catch (e: any) {
-    lastError.value = e?.message ?? String(e)
+    const errText = e?.message ?? String(e)
+    lastError.value = errText
+    appendSendError(errText)
   } finally {
     sending.value = false
   }
@@ -1113,8 +1372,30 @@ onBeforeUnmount(() => {
 }
 
 .content-shell {
-  height: 100vh;
+  height: 100dvh;
   display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.panel-nav {
+  width: clamp(180px, 18vw, 260px);
+}
+
+.panel-sessions {
+  width: clamp(220px, 24vw, 320px);
+}
+
+.panel-runtime {
+  width: clamp(240px, 26vw, 340px);
+}
+
+@media (max-width: 1120px) {
+  .panel-runtime {
+    display: none;
+  }
 }
 
 .btn{ @apply text-xs px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 transition-colors; }
