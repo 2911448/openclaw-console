@@ -102,6 +102,53 @@ export type GatewayPortItem = {
   command?: string;
 };
 
+export type CronJobItem = {
+  id: string;
+  name?: string;
+  schedule?: string;
+  timezone?: string;
+  enabled: boolean;
+  nextRunAt?: string;
+  lastRunAt?: string;
+  lastStatus?: string;
+  lastDurationMs?: number;
+  consecutiveFailures?: number;
+  workspace?: string;
+  prompt?: string;
+  updatedAt?: string;
+  riskFlags: string[];
+};
+
+export type CronRunItem = {
+  jobId: string;
+  startedAt?: string;
+  finishedAt?: string;
+  status?: string;
+  durationMs?: number;
+  exitCode?: number;
+  error?: string;
+  summary?: string;
+  rawLine?: string;
+};
+
+export type CronSchedulerStatus = {
+  state?: string;
+  enabled?: boolean;
+  running?: boolean;
+  timezone?: string;
+  lastTickAt?: string;
+  nextTickAt?: string;
+  workerCount?: number;
+};
+
+export type CronPanelData = {
+  scheduler: CronSchedulerStatus;
+  jobs: CronJobItem[];
+  recentRuns: CronRunItem[];
+  errors: string[];
+  fetchedAt: number;
+};
+
 type TauriCore = {
   invoke: <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
 };
@@ -179,4 +226,24 @@ export async function listModels(gatewayPort?: number) {
 
 export async function listGatewayPorts() {
   return getInvoke()<GatewayPortItem[]>('list_gateway_ports');
+}
+
+export async function getCronPanelStatus(limitRunsPerJob = 8, gatewayPort?: number) {
+  return getInvoke()<CronPanelData>('cron_panel_status', { limitRunsPerJob, gatewayPort });
+}
+
+export async function getCronJobRuns(jobId: string, limit = 20, gatewayPort?: number) {
+  return getInvoke()<CronRunItem[]>('cron_job_runs', { jobId, limit, gatewayPort });
+}
+
+export async function runCronJobNow(jobId: string, gatewayPort?: number) {
+  return getInvoke()<ActionResult>('cron_run_now', { jobId, gatewayPort });
+}
+
+export async function setCronJobEnabled(jobId: string, enabled: boolean, gatewayPort?: number) {
+  return getInvoke()<ActionResult>('cron_set_enabled', { jobId, enabled, gatewayPort });
+}
+
+export async function deleteCronJob(jobId: string, gatewayPort?: number) {
+  return getInvoke()<ActionResult>('cron_delete', { jobId, gatewayPort });
 }

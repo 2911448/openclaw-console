@@ -104,6 +104,61 @@ struct GatewayPortItem {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct CronJobItem {
+  id: String,
+  name: Option<String>,
+  schedule: Option<String>,
+  timezone: Option<String>,
+  enabled: bool,
+  next_run_at: Option<String>,
+  last_run_at: Option<String>,
+  last_status: Option<String>,
+  last_duration_ms: Option<u64>,
+  consecutive_failures: u32,
+  workspace: Option<String>,
+  prompt: Option<String>,
+  updated_at: Option<String>,
+  risk_flags: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CronRunItem {
+  job_id: String,
+  started_at: Option<String>,
+  finished_at: Option<String>,
+  status: Option<String>,
+  duration_ms: Option<u64>,
+  exit_code: Option<i64>,
+  error: Option<String>,
+  summary: Option<String>,
+  raw_line: Option<String>,
+}
+
+#[derive(Debug, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct CronSchedulerStatus {
+  state: Option<String>,
+  enabled: Option<bool>,
+  running: Option<bool>,
+  timezone: Option<String>,
+  last_tick_at: Option<String>,
+  next_tick_at: Option<String>,
+  worker_count: Option<u32>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CronPanelData {
+  scheduler: CronSchedulerStatus,
+  jobs: Vec<CronJobItem>,
+  recent_runs: Vec<CronRunItem>,
+  errors: Vec<String>,
+  fetched_at: i64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct SkillsPayload {
   workspace_dir: Option<String>,
   managed_skills_dir: Option<String>,
@@ -348,6 +403,235 @@ fn read_sessions_map() -> Result<HashMap<String, SessionRecord>, String> {
 
 fn format_updated_at(ms: Option<u64>) -> Option<String> {
   ms.map(|v| v.to_string())
+}
+
+fn as_text(v: &Value) -> Option<String> {
+  if let Some(s) = v.as_str() {
+    let t = s.trim();
+    return if t.is_empty() { None } else { Some(t.to_string()) };
+  }
+  if let Some(n) = v.as_i64() {
+    return Some(n.to_string());
+  }
+  if let Some(n) = v.as_u64() {
+    return Some(n.to_string());
+  }
+  if let Some(b) = v.as_bool() {
+    return Some(if b { "true".to_string() } else { "false".to_string() });
+  }
+  None
+}
+
+fn pick_string(obj: &Value, keys: &[&str]) -> Option<String> {
+  for k in keys {
+    if let Some(v) = obj.get(*k).and_then(as_text) {
+      return Some(v);
+    }
+  }
+  None
+}
+
+fn pick_u64(obj: &Value, keys: &[&str]) -> Option<u64> {
+  for k in keys {
+    if let Some(v) = obj.get(*k) {
+      if let Some(n) = v.as_u64() {
+        return Some(n);
+      }
+      if let Some(n) = v.as_i64() {
+        if n >= 0 {
+          return Some(n as u64);
+        }
+      }
+      if let Some(s) = v.as_str().and_then(|x| x.trim().parse::<u64>().ok()) {
+        return Some(s);
+      }
+    }
+  }
+  None
+}
+
+fn pick_i64(obj: &Value, keys: &[&str]) -> Option<i64> {
+  for k in keys {
+    if let Some(v) = obj.get(*k) {
+      if let Some(n) = v.as_i64() {
+        return Some(n);
+      }
+      if let Some(n) = v.as_u64() {
+        if let Ok(c) = i64::try_from(n) {
+          return Some(c);
+        }
+      }
+      if let Some(s) = v.as_str().and_then(|x| x.trim().parse::<i64>().ok()) {
+        return Some(s);
+      }
+    }
+  }
+  None
+}
+
+fn pick_bool(obj: &Value, keys: &[&str]) -> Option<bool> {
+  for k in keys {
+    if let Some(v) = obj.get(*k) {
+      if let Some(b) = v.as_bool() {
+        return Some(b);
+      }
+      if let Some(s) = v.as_str() {
+        let t = s.trim().to_lowercase();
+        if t == "true" || t == "enabled" || t == "running" {
+          return Some(true);
+        }
+        if t == "false" || t == "disabled" || t == "stopped" {
+          return Some(false);
+        }
+      }
+      if let Some(n) = v.as_u64() {
+        return Some(n != 0);
+      }
+    }
+  }
+  None
+}
+
+fn job_risk_flags(job: &CronJobItem) -> Vec<String> {
+  let mut flags = Vec::<String>::new();
+  if !job.enabled {
+    flags.push("disabled".to_string());
+  }
+  if job.consecutive_failures >= 3 {
+    flags.push("failing".to_string());
+  }
+  if job.next_run_at.as_deref().unwrap_or("").is_empty() {
+    flags.push("no-next-run".to_string());
+  }
+  if let Some(s) = job.last_status.as_deref() {
+    let low = s.to_lowercase();
+    if low.contains("fail") || low.contains("error") || low.contains("timeout") {
+      flags.push("last-run-failed".to_string());
+    }
+  } else {
+    flags.push("never-ran".to_string());
+  }
+  flags
+}
+
+fn parse_cron_scheduler_status(v: &Value) -> CronSchedulerStatus {
+  let state = pick_string(v, &["state", "status", "schedulerState"]);
+  let running = pick_bool(v, &["running", "isRunning"]).or_else(|| {
+    state
+      .as_deref()
+      .map(|s| s.eq_ignore_ascii_case("running") || s.eq_ignore_ascii_case("active"))
+  });
+  let enabled = pick_bool(v, &["enabled", "isEnabled"]).or_else(|| {
+    state
+      .as_deref()
+      .map(|s| !s.eq_ignore_ascii_case("disabled"))
+  });
+  CronSchedulerStatus {
+    state,
+    enabled,
+    running,
+    timezone: pick_string(v, &["timezone", "tz"]),
+    last_tick_at: pick_string(v, &["lastTickAt", "lastTick", "lastHeartbeatAt"]),
+    next_tick_at: pick_string(v, &["nextTickAt", "nextTick"]),
+    worker_count: pick_u64(v, &["workerCount", "workers"])
+      .and_then(|n| u32::try_from(n).ok()),
+  }
+}
+
+fn parse_cron_jobs(v: &Value) -> Vec<CronJobItem> {
+  let arr = v
+    .get("jobs")
+    .and_then(|x| x.as_array())
+    .or_else(|| v.get("items").and_then(|x| x.as_array()))
+    .or_else(|| v.as_array());
+  let mut out = Vec::<CronJobItem>::new();
+  if let Some(list) = arr {
+    for raw in list {
+      let node = raw.get("job").unwrap_or(raw);
+      let id = pick_string(node, &["id", "jobId", "cronId"]).unwrap_or_default();
+      if id.is_empty() {
+        continue;
+      }
+
+      let last_run = node.get("lastRun").unwrap_or(&Value::Null);
+      let mut item = CronJobItem {
+        id: id.clone(),
+        name: pick_string(node, &["name", "title", "label"]).or_else(|| Some(id.clone())),
+        schedule: pick_string(node, &["schedule", "cron", "cronExpr", "expression", "rrule"]),
+        timezone: pick_string(node, &["timezone", "tz"]),
+        enabled: pick_bool(node, &["enabled", "isEnabled", "active"])
+          .or_else(|| {
+            pick_string(node, &["status"]).map(|s| !s.eq_ignore_ascii_case("disabled"))
+          })
+          .unwrap_or(true),
+        next_run_at: pick_string(node, &["nextRunAt", "nextRun", "nextDueAt", "nextExecutionAt"]),
+        last_run_at: pick_string(node, &["lastRunAt", "lastExecutedAt", "lastFinishedAt"])
+          .or_else(|| pick_string(last_run, &["finishedAt", "startedAt", "createdAt"])),
+        last_status: pick_string(node, &["lastStatus"])
+          .or_else(|| pick_string(last_run, &["status", "result", "outcome"]))
+          .or_else(|| pick_string(node, &["status"])),
+        last_duration_ms: pick_u64(node, &["lastDurationMs", "durationMs", "lastDuration"])
+          .or_else(|| pick_u64(last_run, &["durationMs", "duration"])),
+        consecutive_failures: pick_u64(node, &["consecutiveFailures", "failureStreak", "failures"])
+          .unwrap_or(0) as u32,
+        workspace: pick_string(node, &["workspace", "workspaceDir", "cwd", "path"]),
+        prompt: pick_string(node, &["prompt", "task", "command", "message"]),
+        updated_at: pick_string(node, &["updatedAt", "updatedTs", "updated"]),
+        risk_flags: Vec::new(),
+      };
+      item.risk_flags = job_risk_flags(&item);
+      out.push(item);
+    }
+  }
+  out.sort_by(|a, b| b.next_run_at.cmp(&a.next_run_at));
+  out
+}
+
+fn parse_cron_runs_output(job_id: &str, stdout: &str) -> Vec<CronRunItem> {
+  let mut out = Vec::<CronRunItem>::new();
+  for line in stdout.lines() {
+    let t = line.trim();
+    if t.is_empty() {
+      continue;
+    }
+    if let Ok(v) = serde_json::from_str::<Value>(t) {
+      let status = pick_string(&v, &["status", "result", "outcome"]).or_else(|| {
+        pick_bool(&v, &["ok", "success"]).map(|b| if b { "ok".to_string() } else { "failed".to_string() })
+      });
+      out.push(CronRunItem {
+        job_id: pick_string(&v, &["id", "jobId", "cronId"]).unwrap_or_else(|| job_id.to_string()),
+        started_at: pick_string(&v, &["startedAt", "startAt", "timestamp", "ts", "createdAt"]),
+        finished_at: pick_string(&v, &["finishedAt", "endAt", "completedAt"]),
+        status,
+        duration_ms: pick_u64(&v, &["durationMs", "duration"]),
+        exit_code: pick_i64(&v, &["exitCode", "code"]),
+        error: pick_string(&v, &["error", "errorMessage"]),
+        summary: pick_string(&v, &["summary", "message", "text"]),
+        raw_line: Some(t.to_string()),
+      });
+      continue;
+    }
+    let low = t.to_lowercase();
+    let status = if low.contains("fail") || low.contains("error") {
+      Some("failed".to_string())
+    } else if low.contains("success") || low.contains("ok") {
+      Some("ok".to_string())
+    } else {
+      None
+    };
+    out.push(CronRunItem {
+      job_id: job_id.to_string(),
+      started_at: None,
+      finished_at: None,
+      status,
+      duration_ms: None,
+      exit_code: None,
+      error: None,
+      summary: Some(t.to_string()),
+      raw_line: Some(t.to_string()),
+    });
+  }
+  out
 }
 
 #[tauri::command]
@@ -908,6 +1192,136 @@ async fn list_skills(gateway_port: Option<u16>) -> Result<SkillsPayload, String>
 }
 
 #[tauri::command]
+async fn cron_panel_status(limit_runs_per_job: Option<usize>, gateway_port: Option<u16>) -> Result<CronPanelData, String> {
+  let per_job_limit = limit_runs_per_job.unwrap_or(8).clamp(2, 20);
+  tauri::async_runtime::spawn_blocking(move || {
+    let mut errors = Vec::<String>::new();
+    let mut scheduler = CronSchedulerStatus::default();
+    let mut jobs = Vec::<CronJobItem>::new();
+    let mut recent_runs = Vec::<CronRunItem>::new();
+
+    match run_openclaw_json(["cron", "status", "--json"], gateway_port) {
+      Ok((j, _stderr)) => {
+        scheduler = parse_cron_scheduler_status(&j);
+      }
+      Err(e) => errors.push(format!("cron status failed: {}", e)),
+    }
+
+    match run_openclaw_json(["cron", "list", "--all", "--json"], gateway_port) {
+      Ok((j, _stderr)) => {
+        jobs = parse_cron_jobs(&j);
+      }
+      Err(e) => errors.push(format!("cron list failed: {}", e)),
+    }
+
+    let candidate_ids = jobs
+      .iter()
+      .filter(|j| j.enabled || j.consecutive_failures > 0)
+      .take(10)
+      .map(|j| j.id.clone())
+      .collect::<Vec<_>>();
+    for id in candidate_ids {
+      let lim = per_job_limit.to_string();
+      let args = vec!["cron", "runs", "--id", id.as_str(), "--limit", lim.as_str()];
+      match run_openclaw_with_port(&args, gateway_port) {
+        Ok((stdout, stderr, ok)) => {
+          if ok {
+            recent_runs.extend(parse_cron_runs_output(&id, &stdout));
+          } else {
+            let msg = if stderr.trim().is_empty() { stdout } else { stderr };
+            errors.push(format!("cron runs failed for {}: {}", id, msg.trim()));
+          }
+        }
+        Err(e) => errors.push(format!("cron runs exec failed for {}: {}", id, e)),
+      }
+    }
+
+    recent_runs.sort_by(|a, b| {
+      b.started_at
+        .as_ref()
+        .or(b.finished_at.as_ref())
+        .cmp(&a.started_at.as_ref().or(a.finished_at.as_ref()))
+    });
+    if recent_runs.len() > 120 {
+      recent_runs.truncate(120);
+    }
+
+    let now = SystemTime::now()
+      .duration_since(UNIX_EPOCH)
+      .map(|d| d.as_millis() as i64)
+      .unwrap_or(0);
+    Ok(CronPanelData {
+      scheduler,
+      jobs,
+      recent_runs,
+      errors,
+      fetched_at: now,
+    })
+  })
+  .await
+  .map_err(|e| format!("cron panel task join error: {}", e))?
+}
+
+#[tauri::command]
+async fn cron_job_runs(job_id: String, limit: Option<usize>, gateway_port: Option<u16>) -> Result<Vec<CronRunItem>, String> {
+  let lim = limit.unwrap_or(20).clamp(1, 100).to_string();
+  tauri::async_runtime::spawn_blocking(move || {
+    let args = vec!["cron", "runs", "--id", job_id.as_str(), "--limit", lim.as_str()];
+    let (stdout, stderr, ok) = run_openclaw_with_port(&args, gateway_port)?;
+    if !ok {
+      let msg = if stderr.trim().is_empty() { stdout } else { stderr };
+      return Err(msg);
+    }
+    Ok(parse_cron_runs_output(&job_id, &stdout))
+  })
+  .await
+  .map_err(|e| format!("cron job runs task join error: {}", e))?
+}
+
+#[tauri::command]
+fn cron_run_now(job_id: String, gateway_port: Option<u16>) -> Result<ActionResult, String> {
+  let args = vec!["cron", "run", job_id.as_str()];
+  let (stdout, stderr, ok) = run_openclaw_with_port(&args, gateway_port)?;
+  let msg = if stderr.trim().is_empty() { stdout.clone() } else { stderr.clone() };
+  Ok(ActionResult {
+    ok,
+    command: format!("openclaw cron run {}", job_id),
+    stdout,
+    stderr,
+    error: if ok { None } else { Some(msg) },
+  })
+}
+
+#[tauri::command]
+fn cron_set_enabled(job_id: String, enabled: bool, gateway_port: Option<u16>) -> Result<ActionResult, String> {
+  let sub = if enabled { "enable" } else { "disable" };
+  let args = vec!["cron", sub, job_id.as_str()];
+  let (stdout, stderr, ok) = run_openclaw_with_port(&args, gateway_port)?;
+  let msg = if stderr.trim().is_empty() { stdout.clone() } else { stderr.clone() };
+  Ok(ActionResult {
+    ok,
+    command: format!("openclaw cron {} {}", sub, job_id),
+    stdout,
+    stderr,
+    error: if ok { None } else { Some(msg) },
+  })
+}
+
+#[tauri::command]
+fn cron_delete(job_id: String, gateway_port: Option<u16>) -> Result<ActionResult, String> {
+  let args = vec!["cron", "rm", job_id.as_str(), "--json"];
+  let (stdout, stderr, ok) = run_openclaw_with_port(&args, gateway_port)?;
+  let msg = if stderr.trim().is_empty() { stdout.clone() } else { stderr.clone() };
+  Ok(ActionResult {
+    ok,
+    command: format!("openclaw cron rm {} --json", job_id),
+    stdout,
+    stderr,
+    error: if ok { None } else { Some(msg) },
+  })
+}
+
+#[tauri::command]
 fn list_models(_gateway_port: Option<u16>) -> Result<Vec<ModelOption>, String> {
   let mut out = Vec::<ModelOption>::new();
   let mut seen = std::collections::HashSet::<String>::new();
@@ -994,6 +1408,11 @@ fn main() {
       send_message,
       gateway_logs,
       list_skills,
+      cron_panel_status,
+      cron_job_runs,
+      cron_run_now,
+      cron_set_enabled,
+      cron_delete,
       list_models,
       get_openclaw_config,
       save_openclaw_config,

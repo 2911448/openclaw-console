@@ -14,6 +14,7 @@
         <NavItem label="本机状态" :active="activeView === 'local'" @select="switchView('local')" />
         <NavItem label="会话面板" :active="activeView === 'sessions'" @select="switchView('sessions')" />
         <NavItem label="Agent 面板" :active="activeView === 'agents'" @select="switchView('agents')" />
+        <NavItem label="Cron 面板" :active="activeView === 'cron'" @select="switchView('cron')" />
         <NavItem label="Skill 面板" :active="activeView === 'skills'" @select="switchView('skills')" />
         <NavItem label="日志面板" :active="activeView === 'gatewayLogs'" @select="switchView('gatewayLogs')" />
       </div>
@@ -211,7 +212,9 @@
             <div class="text-xl font-semibold">Agent 面板</div>
             <div class="text-xs text-subtext">与会话面板同级，查看 agent 运行状态与活跃度</div>
           </div>
-          <button class="btn" @click="refreshAgentPanel">刷新 Agent 状态</button>
+          <button class="btn" :disabled="agentPanelLoading" @click="refreshAgentPanel">
+            {{ agentPanelLoading ? '加载中...' : '刷新 Agent 状态' }}
+          </button>
         </div>
 
         <div class="p-4 rounded-xl border border-white/10 bg-white/5 mb-3">
@@ -219,7 +222,8 @@
         </div>
 
         <div class="p-4 rounded-xl border border-white/10 bg-black/20">
-          <div v-if="agentPanel.items.length===0" class="text-sm text-subtext">暂无 Agent 数据</div>
+          <div v-if="agentPanelLoading" class="text-sm text-subtext">Agent 状态加载中...</div>
+          <div v-else-if="agentPanel.items.length===0" class="text-sm text-subtext">暂无 Agent 数据</div>
           <div v-for="a in agentPanel.items" :key="a.agentId" class="py-3 border-b border-white/10 last:border-b-0">
             <div class="flex items-center justify-between">
               <div class="text-sm font-medium">{{ a.agentId }}</div>
@@ -235,6 +239,184 @@
           <div class="text-[11px] text-subtext mb-2">AGENT ISSUES</div>
           <div v-if="agentPanel.errors.length === 0" class="text-sm text-green-300">No blocking issues</div>
           <div v-for="(err, i) in agentPanel.errors" :key="i" class="text-sm text-amber-300 break-words py-1">{{ err }}</div>
+        </div>
+      </div>
+    </main>
+
+    <main v-else-if="activeView === 'cron'" class="flex-1 p-6 bg-black/10 overflow-auto">
+      <div class="max-w-[1180px] mx-auto">
+        <div class="flex items-center justify-between mb-4 gap-3">
+          <div>
+            <div class="text-xl font-semibold">Cron 面板</div>
+            <div class="text-xs text-subtext">定时任务健康中心：调度、执行、失败与风险一屏查看</div>
+          </div>
+          <button class="btn" :disabled="cronLoading" @click="refreshCronPanel">
+            {{ cronLoading ? '刷新中...' : '刷新 Cron 状态' }}
+          </button>
+        </div>
+
+        <div class="grid grid-cols-5 gap-3 mb-3">
+          <div class="p-3 rounded-xl border border-white/10 bg-white/5">
+            <div class="text-xs text-subtext">TOTAL JOBS</div>
+            <div class="text-lg font-semibold">{{ cronSummary.total }}</div>
+          </div>
+          <div class="p-3 rounded-xl border border-white/10 bg-white/5">
+            <div class="text-xs text-subtext">ENABLED</div>
+            <div class="text-lg font-semibold">{{ cronSummary.enabled }}</div>
+          </div>
+          <div class="p-3 rounded-xl border border-white/10 bg-white/5">
+            <div class="text-xs text-subtext">PAUSED</div>
+            <div class="text-lg font-semibold">{{ cronSummary.disabled }}</div>
+          </div>
+          <div class="p-3 rounded-xl border border-white/10 bg-white/5">
+            <div class="text-xs text-subtext">FAIL (24H)</div>
+            <div class="text-lg font-semibold">{{ cronSummary.fail24h }}</div>
+          </div>
+          <div class="p-3 rounded-xl border border-white/10 bg-white/5">
+            <div class="text-xs text-subtext">SUCCESS RATE (24H)</div>
+            <div class="text-lg font-semibold">{{ cronSummary.successRate24h }}</div>
+          </div>
+        </div>
+
+        <div class="p-3 rounded-xl border border-white/10 bg-black/20 mb-3 grid grid-cols-[1fr_auto_auto_auto] gap-2 items-center">
+          <input v-model="cronSearch" class="input" placeholder="搜索任务 ID / 名称 / 调度 / 工作区..." />
+          <select v-model="cronStatusFilter" class="input text-xs w-[140px]">
+            <option value="all">全部状态</option>
+            <option value="enabled">仅启用</option>
+            <option value="disabled">仅暂停</option>
+            <option value="failing">仅异常</option>
+          </select>
+          <label class="text-xs text-subtext flex items-center gap-2">
+            <input v-model="cronRiskOnly" type="checkbox" />
+            仅显示风险任务
+          </label>
+          <button class="btn" :disabled="cronLoading" @click="refreshCronPanel">应用</button>
+        </div>
+
+        <div class="grid grid-cols-[1.2fr_1fr] gap-3 mb-3">
+          <div class="rounded-xl border border-white/10 bg-black/20 overflow-hidden">
+            <div class="px-4 py-3 border-b border-white/10 text-sm font-medium">任务列表</div>
+            <div class="max-h-[430px] overflow-auto">
+              <div v-if="cronLoading" class="p-4 text-sm text-subtext">加载中...</div>
+              <div v-else-if="filteredCronJobs.length === 0" class="p-4 text-sm text-subtext">没有匹配的任务</div>
+              <div
+                v-for="job in filteredCronJobs"
+                :key="job.id"
+                class="px-4 py-3 border-b border-white/10 cursor-pointer transition-colors hover:bg-white/5"
+                :class="selectedCronId === job.id ? 'bg-white/8' : ''"
+                @click="selectCronJob(job.id)"
+              >
+                <div class="flex items-center justify-between gap-2">
+                  <div class="text-sm font-medium truncate">{{ job.name || job.id }}</div>
+                  <div class="text-[11px] px-2 py-0.5 rounded border border-white/20"
+                       :class="job.enabled ? 'text-green-300' : 'text-amber-300'">
+                    {{ job.enabled ? 'enabled' : 'paused' }}
+                  </div>
+                </div>
+                <div class="text-xs text-subtext mt-1 truncate">{{ job.id }}</div>
+                <div class="text-xs text-subtext mt-1 truncate">
+                  {{ job.schedule || '-' }} · next: {{ formatTimeLabel(job.nextRunAt) }}
+                </div>
+                <div class="mt-2 flex items-center gap-2 flex-wrap">
+                  <span v-for="flag in job.riskFlags" :key="`${job.id}-${flag}`"
+                        class="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-200 border border-amber-400/40">
+                    {{ flag }}
+                  </span>
+                </div>
+                <div class="mt-2 flex items-center gap-2">
+                  <button
+                    class="btn text-xs"
+                    :disabled="!!cronActionLoading"
+                    @click.stop="runCronJob(job.id)"
+                  >立即执行</button>
+                  <button
+                    class="btn text-xs"
+                    :disabled="!!cronActionLoading"
+                    @click.stop="toggleCronJob(job.id, !job.enabled)"
+                  >{{ job.enabled ? '暂停' : '启用' }}</button>
+                  <button
+                    class="btn text-xs text-amber-200"
+                    :disabled="!!cronActionLoading"
+                    @click.stop="removeCronJob(job.id)"
+                  >删除</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="rounded-xl border border-white/10 bg-black/20 overflow-hidden">
+            <div class="px-4 py-3 border-b border-white/10 text-sm font-medium">任务详情</div>
+            <div v-if="!selectedCronJob" class="p-4 text-sm text-subtext">选择左侧任务查看详情与运行记录</div>
+            <div v-else class="p-4 space-y-3">
+              <InfoRow label="JOB ID" :value="selectedCronJob.id" />
+              <InfoRow label="NAME" :value="selectedCronJob.name || '-'" />
+              <InfoRow label="SCHEDULE" :value="selectedCronJob.schedule || '-'" />
+              <InfoRow label="TIMEZONE" :value="selectedCronJob.timezone || '-'" />
+              <InfoRow label="NEXT RUN" :value="formatTimeLabel(selectedCronJob.nextRunAt)" />
+              <InfoRow label="LAST RUN" :value="formatTimeLabel(selectedCronJob.lastRunAt)" />
+              <InfoRow label="LAST RESULT" :value="selectedCronJob.lastStatus || '-'" />
+              <InfoRow label="LAST DURATION" :value="formatDuration(selectedCronJob.lastDurationMs)" />
+              <InfoRow label="FAIL STREAK" :value="String(selectedCronJob.consecutiveFailures || 0)" />
+              <InfoRow label="WORKSPACE" :value="selectedCronJob.workspace || '-'" />
+              <div class="pt-1">
+                <div class="text-[11px] text-subtext mb-1">PROMPT / COMMAND</div>
+                <div class="text-xs whitespace-pre-wrap break-all rounded-lg border border-white/10 bg-black/20 p-2">
+                  {{ selectedCronJob.prompt || '-' }}
+                </div>
+              </div>
+              <div class="pt-1">
+                <div class="flex items-center justify-between mb-1">
+                  <div class="text-[11px] text-subtext">最近执行</div>
+                  <button class="btn text-xs" :disabled="cronRunsLoading" @click="refreshSelectedCronRuns">
+                    {{ cronRunsLoading ? '加载中...' : '刷新记录' }}
+                  </button>
+                </div>
+                <div class="max-h-[190px] overflow-auto rounded-lg border border-white/10 bg-black/20 p-2">
+                  <div v-if="cronRunsLoading" class="text-xs text-subtext">加载中...</div>
+                  <div v-else-if="selectedCronRuns.length === 0" class="text-xs text-subtext">暂无运行记录</div>
+                  <div v-for="(r, idx) in selectedCronRuns" :key="`${r.jobId}-${idx}`" class="text-xs py-1 border-b border-white/10 last:border-b-0">
+                    <div class="flex items-center justify-between gap-2">
+                      <span :class="cronRunStatusClass(r.status)">{{ r.status || 'unknown' }}</span>
+                      <span class="text-subtext">{{ formatTimeLabel(r.startedAt || r.finishedAt) }}</span>
+                    </div>
+                    <div class="text-subtext mt-0.5">
+                      duration: {{ formatDuration(r.durationMs) }} | exit: {{ r.exitCode ?? '-' }}
+                    </div>
+                    <div v-if="r.summary || r.error" class="mt-0.5 whitespace-pre-wrap break-all text-subtext">
+                      {{ r.error || r.summary }}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="rounded-xl border border-white/10 bg-black/20 mb-3 overflow-hidden">
+          <div class="px-4 py-3 border-b border-white/10 flex items-center justify-between gap-2">
+            <div class="text-sm font-medium">全局运行历史</div>
+            <input v-model="cronHistorySearch" class="input max-w-[340px]" placeholder="搜索 job/status/summary..." />
+          </div>
+          <div class="max-h-[280px] overflow-auto">
+            <div v-if="visibleCronRuns.length === 0" class="p-4 text-sm text-subtext">暂无历史记录</div>
+            <div v-for="(r, idx) in visibleCronRuns" :key="`${r.jobId}-${idx}-${r.startedAt || r.finishedAt || idx}`"
+                 class="px-4 py-2 border-b border-white/10 last:border-b-0 text-xs">
+              <div class="flex items-center justify-between gap-2">
+                <span class="font-medium">{{ r.jobId }}</span>
+                <span :class="cronRunStatusClass(r.status)">{{ r.status || 'unknown' }}</span>
+              </div>
+              <div class="text-subtext mt-0.5">
+                {{ formatTimeLabel(r.startedAt || r.finishedAt) }} | duration: {{ formatDuration(r.durationMs) }} | exit: {{ r.exitCode ?? '-' }}
+              </div>
+              <div v-if="r.summary || r.error" class="text-subtext mt-0.5 whitespace-pre-wrap break-all">{{ r.error || r.summary }}</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-3 p-4 rounded-xl border border-white/10 bg-black/20">
+          <div class="text-[11px] text-subtext mb-2">CRON ISSUES</div>
+          <div v-if="cronPanel.errors.length === 0" class="text-sm text-green-300">No blocking issues</div>
+          <div v-for="(err, i) in cronPanel.errors" :key="i" class="text-sm text-amber-300 break-words py-1">{{ err }}</div>
         </div>
       </div>
     </main>
@@ -447,7 +629,40 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import NavItem from './components/NavItem.vue'
 import InfoRow from './components/InfoRow.vue'
-import { getAgentPanelStatus, getGatewayLogs, getLocalStatus, getLocalStatusQuick, getOpenclawConfig, getSessionHistory, listGatewayPorts, listModels, listSessions, listSkills, restartGateway, runDoctor, saveOpenclawConfig, sendMessage, type ActionResult, type AgentPanelData, type GatewayLogs, type GatewayPortItem, type LocalStatus, type ModelOption, type OpenclawConfigPayload, type SessionItem, type SkillItem, type SkillsPayload } from './api'
+import {
+  deleteCronJob,
+  getAgentPanelStatus,
+  getCronJobRuns,
+  getCronPanelStatus,
+  getGatewayLogs,
+  getLocalStatus,
+  getLocalStatusQuick,
+  getOpenclawConfig,
+  getSessionHistory,
+  listGatewayPorts,
+  listModels,
+  listSessions,
+  listSkills,
+  restartGateway,
+  runCronJobNow,
+  runDoctor,
+  saveOpenclawConfig,
+  sendMessage,
+  setCronJobEnabled,
+  type ActionResult,
+  type AgentPanelData,
+  type CronJobItem,
+  type CronPanelData,
+  type CronRunItem,
+  type GatewayLogs,
+  type GatewayPortItem,
+  type LocalStatus,
+  type ModelOption,
+  type OpenclawConfigPayload,
+  type SessionItem,
+  type SkillItem,
+  type SkillsPayload,
+} from './api'
 
 const sessions = ref<SessionItem[]>([])
 const selected = ref<SessionItem | null>(null)
@@ -474,7 +689,7 @@ const draft = ref('')
 const sending = ref(false)
 const lastError = ref<string | null>(null)
 const polling = ref(false)
-const activeView = ref<'sessions' | 'agents' | 'skills' | 'gatewayLogs' | 'local'>('local')
+const activeView = ref<'sessions' | 'agents' | 'cron' | 'skills' | 'gatewayLogs' | 'local'>('local')
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
 const status = ref<LocalStatus>({
@@ -495,11 +710,29 @@ const status = ref<LocalStatus>({
 })
 const actionResult = ref<ActionResult | null>(null)
 const actionLoading = ref<'restart' | 'doctor' | ''>('')
+const cronPanel = ref<CronPanelData>({
+  scheduler: {},
+  jobs: [],
+  recentRuns: [],
+  errors: [],
+  fetchedAt: 0,
+})
+const cronLoading = ref(false)
+const cronSearch = ref('')
+const cronStatusFilter = ref<'all' | 'enabled' | 'disabled' | 'failing'>('all')
+const cronRiskOnly = ref(false)
+const cronActionLoading = ref('')
+const selectedCronId = ref('')
+const selectedCronRuns = ref<CronRunItem[]>([])
+const cronRunsLoading = ref(false)
+const cronHistorySearch = ref('')
 const agentPanel = ref<AgentPanelData>({
   defaultAgentId: '',
   items: [],
   errors: [],
 })
+const agentPanelLoading = ref(false)
+const agentPanelLoaded = ref(false)
 const gatewayLogs = ref<GatewayLogs>({ lines: [], fetchedAt: 0 })
 const gatewayLogsLoading = ref(false)
 const skillsData = ref<SkillsPayload>({ workspaceDir: '', managedSkillsDir: '', skills: [] })
@@ -530,6 +763,7 @@ const gatewayPortDraft = ref('')
 const viewBootstrapped = ref<Record<string, boolean>>({
   sessions: false,
   agents: false,
+  cron: false,
   skills: false,
   gatewayLogs: false,
   local: true,
@@ -648,6 +882,66 @@ const visibleSkills = computed(() => {
   })
 })
 
+const filteredCronJobs = computed(() => {
+  const q = cronSearch.value.trim().toLowerCase()
+  return (cronPanel.value.jobs || []).filter((job: CronJobItem) => {
+    if (cronStatusFilter.value === 'enabled' && !job.enabled) return false
+    if (cronStatusFilter.value === 'disabled' && job.enabled) return false
+    if (cronStatusFilter.value === 'failing') {
+      const failed = (job.consecutiveFailures || 0) > 0 || (job.lastStatus || '').toLowerCase().includes('fail')
+      if (!failed) return false
+    }
+    if (cronRiskOnly.value && (job.riskFlags || []).length === 0) return false
+    if (!q) return true
+    return `${job.id} ${job.name || ''} ${job.schedule || ''} ${job.workspace || ''}`.toLowerCase().includes(q)
+  })
+})
+
+const selectedCronJob = computed(() => {
+  if (!selectedCronId.value) return null
+  return cronPanel.value.jobs.find((j) => j.id === selectedCronId.value) || null
+})
+
+const visibleCronRuns = computed(() => {
+  const q = cronHistorySearch.value.trim().toLowerCase()
+  const all = cronPanel.value.recentRuns || []
+  if (!q) return all
+  return all.filter((r: CronRunItem) =>
+    `${r.jobId} ${r.status || ''} ${r.summary || ''} ${r.error || ''}`.toLowerCase().includes(q),
+  )
+})
+
+const cronSummary = computed(() => {
+  const jobs = cronPanel.value.jobs || []
+  const runs = cronPanel.value.recentRuns || []
+  const now = Date.now()
+  const in24h = runs.filter((r: CronRunItem) => {
+    const raw = r.startedAt || r.finishedAt
+    if (!raw) return false
+    const n = Number(raw)
+    const d = Number.isFinite(n) ? new Date(n) : new Date(raw)
+    if (Number.isNaN(d.getTime())) return false
+    return now - d.getTime() <= 24 * 60 * 60 * 1000
+  })
+  const fail24h = in24h.filter((r: CronRunItem) => {
+    const t = String(r.status || '').toLowerCase()
+    return t.includes('fail') || t.includes('error') || t.includes('timeout') || (r.exitCode ?? 0) !== 0
+  }).length
+  const ok24h = in24h.filter((r: CronRunItem) => {
+    const t = String(r.status || '').toLowerCase()
+    return t.includes('ok') || t.includes('success') || t.includes('done')
+  }).length
+  const total24h = in24h.length
+  const successRate24h = total24h ? `${Math.round((ok24h / total24h) * 100)}%` : '-'
+  return {
+    total: jobs.length,
+    enabled: jobs.filter((j) => j.enabled).length,
+    disabled: jobs.filter((j) => !j.enabled).length,
+    fail24h,
+    successRate24h,
+  }
+})
+
 function sessionKindLabel(s: SessionItem) {
   if (s.kind && s.kind.trim()) return s.kind
   if (s.sessionKey.includes(':cron:')) return 'cron'
@@ -693,7 +987,80 @@ async function refreshLocalStatus() {
 }
 
 async function refreshAgentPanel() {
-  agentPanel.value = await getAgentPanelStatus(selectedGatewayPort.value)
+  if (agentPanelLoading.value) return
+  agentPanelLoading.value = true
+  try {
+    agentPanel.value = await getAgentPanelStatus(selectedGatewayPort.value)
+    agentPanelLoaded.value = true
+  } finally {
+    agentPanelLoading.value = false
+  }
+}
+
+async function refreshCronPanel() {
+  if (cronLoading.value) return
+  cronLoading.value = true
+  try {
+    cronPanel.value = await getCronPanelStatus(8, selectedGatewayPort.value)
+    if (!selectedCronId.value || !cronPanel.value.jobs.some((j) => j.id === selectedCronId.value)) {
+      selectedCronId.value = cronPanel.value.jobs[0]?.id || ''
+    }
+    if (selectedCronId.value) {
+      refreshSelectedCronRuns().catch(() => {})
+    } else {
+      selectedCronRuns.value = []
+    }
+  } finally {
+    cronLoading.value = false
+  }
+}
+
+async function refreshSelectedCronRuns() {
+  const id = selectedCronId.value
+  if (!id) return
+  cronRunsLoading.value = true
+  try {
+    selectedCronRuns.value = await getCronJobRuns(id, 20, selectedGatewayPort.value)
+  } finally {
+    cronRunsLoading.value = false
+  }
+}
+
+function selectCronJob(id: string) {
+  selectedCronId.value = id
+  refreshSelectedCronRuns().catch(() => {})
+}
+
+async function runCronJob(jobId: string) {
+  try {
+    cronActionLoading.value = `run:${jobId}`
+    actionResult.value = await runCronJobNow(jobId, selectedGatewayPort.value)
+    await refreshCronPanel()
+  } finally {
+    cronActionLoading.value = ''
+  }
+}
+
+async function toggleCronJob(jobId: string, enabled: boolean) {
+  try {
+    cronActionLoading.value = `toggle:${jobId}`
+    actionResult.value = await setCronJobEnabled(jobId, enabled, selectedGatewayPort.value)
+    await refreshCronPanel()
+  } finally {
+    cronActionLoading.value = ''
+  }
+}
+
+async function removeCronJob(jobId: string) {
+  const ok = window.confirm(`确认删除 cron 任务 ${jobId} 吗？该操作不可恢复。`)
+  if (!ok) return
+  try {
+    cronActionLoading.value = `delete:${jobId}`
+    actionResult.value = await deleteCronJob(jobId, selectedGatewayPort.value)
+    await refreshCronPanel()
+  } finally {
+    cronActionLoading.value = ''
+  }
 }
 
 async function refreshGatewayLogs() {
@@ -749,6 +1116,7 @@ async function refreshGatewayPorts() {
 function applyGatewayPortSelection() {
   refreshLocalStatus().catch(() => {})
   if (activeView.value === 'agents') refreshAgentPanel().catch(() => {})
+  if (activeView.value === 'cron') refreshCronPanel().catch(() => {})
   if (activeView.value === 'skills') refreshSkills().catch(() => {})
   if (activeView.value === 'gatewayLogs') refreshGatewayLogs().catch(() => {})
   if (activeView.value === 'sessions') {
@@ -795,7 +1163,7 @@ async function persistOpenclawConfig() {
   }
 }
 
-function switchView(v: 'sessions' | 'agents' | 'skills' | 'gatewayLogs' | 'local') {
+function switchView(v: 'sessions' | 'agents' | 'cron' | 'skills' | 'gatewayLogs' | 'local') {
   activeView.value = v
   if (v !== 'sessions' && polling.value) {
     polling.value = false
@@ -808,8 +1176,11 @@ function switchView(v: 'sessions' | 'agents' | 'skills' | 'gatewayLogs' | 'local
     if (v === 'sessions' && modelOptions.value.length === 0 && !modelOptionsLoading.value) {
       refreshModelOptions().catch(() => {})
     }
-    if (v === 'agents' && agentPanel.value.items.length === 0) {
+    if (v === 'agents' && !agentPanelLoaded.value && !agentPanelLoading.value) {
       refreshAgentPanel().catch(() => {})
+    }
+    if (v === 'cron' && cronPanel.value.jobs.length === 0 && !cronLoading.value) {
+      refreshCronPanel().catch(() => {})
     }
     if (v === 'skills' && skillsData.value.skills.length === 0) {
       refreshSkills().catch(() => {})
@@ -871,6 +1242,23 @@ function formatTimeLabel(raw?: string) {
   const d = Number.isFinite(n) ? new Date(n) : new Date(raw)
   if (Number.isNaN(d.getTime())) return String(raw)
   return `${d.toLocaleDateString()} ${d.toLocaleTimeString()}`
+}
+
+function formatDuration(ms?: number) {
+  if (ms == null || !Number.isFinite(ms)) return '-'
+  if (ms < 1000) return `${ms} ms`
+  const s = ms / 1000
+  if (s < 60) return `${s.toFixed(1)} s`
+  const m = Math.floor(s / 60)
+  const r = Math.round(s % 60)
+  return `${m}m ${r}s`
+}
+
+function cronRunStatusClass(status?: string) {
+  const t = String(status || '').toLowerCase()
+  if (t.includes('ok') || t.includes('success') || t.includes('done')) return 'text-green-300'
+  if (t.includes('fail') || t.includes('error') || t.includes('timeout')) return 'text-amber-300'
+  return 'text-subtext'
 }
 
 function formatClock(raw?: string) {
@@ -1071,6 +1459,7 @@ async function quickRefresh() {
     refreshSessions(),
     refreshLocalStatus(),
     refreshAgentPanel(),
+    refreshCronPanel(),
     refreshGatewayLogs(),
     refreshHistory(),
   ])
@@ -1353,8 +1742,6 @@ onMounted(() => {
   requestAnimationFrame(() => {
     setTimeout(() => {
       refreshLocalStatus().catch(() => {})
-      refreshModelOptions().catch(() => {})
-      refreshSessions().catch(() => {})
       if (activeView.value === 'local') refreshOpenclawConfig().catch(() => {})
     }, 1200)
   })
